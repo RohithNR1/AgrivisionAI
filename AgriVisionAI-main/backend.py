@@ -11,13 +11,19 @@ from PIL import Image
 import os
 import requests
 from datetime import datetime
+from dotenv import load_dotenv
+from gtts import gTTS
+from langdetect import detect, LangDetectException
+
+# Load environment variables from .env if present
+load_dotenv()
 
 # ================= Flask Setup =================
 app = Flask(__name__, static_folder="vision-agri-care-main/dist", static_url_path="")
 CORS(app)
 
 # ================= Gemini API Setup =================
-API_KEY = os.environ.get("GEMINI_API_KEY") or "AIzaSyBzZiW0njEOfWPxABbyiDtQioMRUUor8tw"
+API_KEY = os.environ.get("GEMINI_API_KEY") or "AIzaSyCR6TbEEdig4Er4taHp2D5WfmoItjoMKgk"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 def gemini_response(message):
@@ -32,12 +38,87 @@ def gemini_response(message):
     except Exception as e:
         return f"Gemini API error: {e}"
 
+
+def text_to_speech_base64(text, lang='en'):
+    """Convert text to mp3 and return base64-encoded string using gTTS (fallback)."""
+    buf = io.BytesIO()
+    tts = gTTS(text=text, lang=lang, slow=False)
+    tts.write_to_fp(buf)
+    buf.seek(0)
+    audio_b64 = base64.b64encode(buf.read()).decode('utf-8')
+    return audio_b64
+
+
+# Note: Google Cloud TTS is provided via a separate microservice (see tts_service/).
+# The main backend will call that service via the TTS_SERVICE_URL env var if configured.
+
+
+def gemini_response(message, language=None):
+    """Send message to Gemini and optionally instruct response language."""
+    params = {"key": API_KEY}
+    if language:
+        # If language provided as ISO code, try to use language name in instruction
+        prompt_text = f"Please respond in the language '{language}'. User message: {message}"
+    else:
+        prompt_text = message
+    data = {"contents": [{"parts": [{"text": prompt_text}]}]}
+    try:
+        resp = requests.post(GEMINI_URL, params=params, json=data)
+        if resp.status_code == 200:
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            return f"Gemini error: {resp.text}"
+    except Exception as e:
+        return f"Gemini API error: {e}"
+
 @app.route('/api/chat', methods=['POST'])
 def chatbot():
     data = request.get_json()
     user_message = data.get('message', '')
-    response_text = gemini_response(user_message)
-    return jsonify({"response": response_text, "timestamp": str(datetime.now())})
+    # language code expected like 'en','hi','kn','te','ta'
+    requested_lang = data.get('language')
+    want_tts = bool(data.get('tts', False))
+
+    # Auto-detect language if not provided
+    detected_lang = None
+    if not requested_lang:
+        try:
+            detected_lang = detect(user_message)
+        except LangDetectException:
+            detected_lang = None
+
+    # Prefer requested_lang if provided else detected_lang
+    lang_for_response = requested_lang or detected_lang
+
+    response_text = gemini_response(user_message, language=lang_for_response) if lang_for_response else gemini_response(user_message)
+
+    audio_b64 = None
+    audio_error = None
+    if want_tts and response_text:
+        tts_lang = (requested_lang or detected_lang) or 'en'
+        # If a TTS microservice is configured, send the text to it
+        tts_service_url = os.environ.get('TTS_SERVICE_URL')
+        if tts_service_url:
+            try:
+                tts_resp = requests.post(tts_service_url.rstrip('/') + '/synthesize', json={"text": response_text, "lang": tts_lang}, timeout=15)
+                if tts_resp.status_code == 200:
+                    audio_b64 = tts_resp.json().get('audio')
+                else:
+                    audio_error = f"TTS service error: {tts_resp.status_code} {tts_resp.text}"
+            except Exception as e:
+                audio_error = str(e)
+        else:
+            # Fallback to local gTTS
+            try:
+                audio_b64 = text_to_speech_base64(response_text, lang=tts_lang)
+            except Exception as e:
+                audio_b64 = None
+                audio_error = str(e)
+
+    payload = {"response": response_text, "audio": audio_b64, "timestamp": str(datetime.now())}
+    if audio_error:
+        payload["audio_error"] = audio_error
+    return jsonify(payload)
 
 # ================= Model Setup =================
 model_path = os.path.join(os.path.dirname(__file__), "plant_disease_model_fixed.keras")

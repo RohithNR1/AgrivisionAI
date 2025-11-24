@@ -26,6 +26,8 @@ export const Chatbot = () => {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [recognition, setRecognition] = useState<any>(null);
+  const [language, setLanguage] = useState<string>('auto');
+  const [enableTTS, setEnableTTS] = useState<boolean>(true);
 
   // Initialize speech recognition
   useState(() => {
@@ -70,12 +72,21 @@ export const Chatbot = () => {
       const response = await fetch('http://localhost:5000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({ message: userMessage, language: language === 'auto' ? undefined : language, tts: enableTTS }),
       });
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       const data = await response.json();
+      // Play returned audio if present
+      if (data.audio) {
+        try {
+          const audio = new Audio("data:audio/mp3;base64," + data.audio);
+          await audio.play();
+        } catch (e) {
+          console.error('Failed to play audio:', e);
+        }
+      }
       return data.response;
     } catch (error) {
       console.error('Error getting bot response:', error);
@@ -262,6 +273,23 @@ export const Chatbot = () => {
 
           <div className="p-6 border-t flex-shrink-0">
             <div className="flex gap-2">
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="border px-2 py-1 rounded"
+                title="Select language or Auto-detect"
+              >
+                <option value="auto">Auto-detect</option>
+                <option value="en">English</option>
+                <option value="hi">Hindi</option>
+                <option value="kn">Kannada</option>
+                <option value="te">Telugu</option>
+                <option value="ta">Tamil</option>
+              </select>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={enableTTS} onChange={() => setEnableTTS(!enableTTS)} />
+                <span className="text-sm">TTS</span>
+              </label>
               <Input
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
