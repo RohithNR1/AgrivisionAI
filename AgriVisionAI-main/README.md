@@ -159,6 +159,68 @@ The integrated chatbot can help with:
 - **Plant-specific care**: Tomatoes, potatoes, apples
 - **Disease prevention**: Early detection and treatment
 
+## 🌐 Multilingual Chatbot & Text-to-Speech (TTS)
+
+This project now includes a multilingual chatbot and optional Text-to-Speech output.
+
+- **Supported languages (prototype):** English (`en`), Hindi (`hi`), Kannada (`kn`), Telugu (`te`), Tamil (`ta`).
+- **Language detection:** If you don't provide a `language` value, the backend will attempt to detect the input language automatically.
+- **TTS options:** The backend supports two TTS modes:
+   - **Local fallback (gTTS):** Simple, free prototyping voice using `gTTS` (no cloud credentials required).
+   - **Production-quality (Google Cloud TTS):** Run the separate `tts_service` microservice (see `tts_service/README.md`) which uses Google Cloud Text-to-Speech.
+
+Usage (API)
+
+POST `/api/chat`
+
+Request JSON examples:
+
+Text response only (auto-detect):
+```json
+{ "message": "How do I fertilize my tomatoes?" }
+```
+
+Text + TTS in Hindi:
+```json
+{ "message": "मुझे अपने टमाटर के लिए उर्वरक सलाह चाहिए", "language": "hi", "tts": true }
+```
+
+Response JSON includes `response` (text) and `audio` (base64 MP3) when `tts` is requested:
+
+```json
+{
+   "response": "आप अपने टमाटर के लिए...",
+   "audio": "<base64 mp3 data>",
+   "timestamp": "2025-11-24T12:00:00"
+}
+```
+
+How it works
+
+- The frontend (`Chatbot.tsx`) sends `language` and `tts` flags to the backend. The frontend will automatically play returned base64 audio.
+- If `TTS_SERVICE_URL` is configured in the main `.env`, the backend forwards TTS requests to that microservice (recommended for Google Cloud TTS). Otherwise it falls back to `gTTS`.
+
+Running production TTS microservice
+
+1. Change directory to `tts_service` and create a venv:
+```powershell
+cd tts_service
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+2. Set up Google Cloud Text-to-Speech credentials (service account JSON) and point `GOOGLE_APPLICATION_CREDENTIALS` at it (or add path to `.env` in `tts_service`).
+3. Run the service:
+```powershell
+.\.venv\Scripts\python.exe app.py
+```
+4. In the main project `.env`, set:
+```
+TTS_SERVICE_URL=http://localhost:6000
+```
+Restart the main backend and the frontend will receive higher-quality TTS audio when `tts=true`.
+
+
 ## 🧪 Testing
 
 ### Test the API

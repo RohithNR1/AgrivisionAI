@@ -71,3 +71,27 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Frontend: Chatbot + TTS Integration
+
+This frontend includes the AgriVision Chatbot component which integrates with the Flask backend API at `http://localhost:5000/api/chat`.
+
+- The chatbot UI (`src/components/Chatbot.tsx`) sends JSON `{ message, language?, tts? }` to the backend.
+- The language dropdown supports: Auto-detect, English (`en`), Hindi (`hi`), Kannada (`kn`), Telugu (`te`), Tamil (`ta`).
+- When `tts` is enabled the backend returns `audio` (base64 MP3) which the frontend will automatically play.
+
+Running locally:
+
+1. Start the backend (from project root):
+```powershell
+& .\venv\Scripts\Activate.ps1
+..\venv\Scripts\python.exe ..\backend.py
+```
+2. Start the frontend:
+```powershell
+cd vision-agri-care-main
+npm install
+npm run dev
+```
+
+If you want production-quality TTS, run the separate `tts_service` (see project root README). The frontend does not call the TTS service directly — the backend will proxy TTS requests when `TTS_SERVICE_URL` is set.
